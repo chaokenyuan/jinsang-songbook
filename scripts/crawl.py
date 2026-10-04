@@ -92,7 +92,7 @@ def main():
     headers = ["歌號", "歌名", "歌手", "語言", "性別", "字數", "上架年月", "點播數", "副標",
                "專輯", "專輯日期", "YouTube", "id", "songDetailID"]
     with open(CSV_PATH, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.writer(f)
+        w = csv.writer(f, lineterminator="\n")
         w.writerow(headers)
         for s in songs:
             w.writerow([s.get(c, "") for c in cols])
