@@ -32,5 +32,6 @@ jobs:
             echo "歌單沒有變動"
           else
             git commit -m "chore(data): 更新歌單 $(TZ=Asia/Taipei date +%F)"
+            git pull --rebase origin main
             git push origin HEAD:main
           fi
