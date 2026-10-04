@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>金嗓找歌</title>
+<style>
+:root {
+  --bg: #f6f5f2; --card: #ffffff; --text: #1d1d1f; --muted: #6b6b70;
+  --line: #e3e1dc; --accent: #b4532a; --accent-soft: #f6e6dd; --code: #1d1d1f;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161617; --card: #212123; --text: #ececee; --muted: #9a9aa0;
+    --line: #333336; --accent: #e98a5c; --accent-soft: #3a2a22; --code: #ffffff;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+}
+.wrap { max-width: 860px; margin: 0 auto; padding: 16px; }
+header h1 { font-size: 22px; margin: 4px 0 2px; }
+header p { margin: 0; color: var(--muted); font-size: 13px; }
+.search {
+  position: sticky; top: 0; z-index: 5; background: var(--bg);
+  padding: 12px 0 10px; border-bottom: 1px solid var(--line);
+}
+.inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+input[type=search] {
+  width: 100%; padding: 11px 12px; font-size: 16px; color: var(--text);
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; outline: none;
+}
+input[type=search]:focus { border-color: var(--accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip {
+  border: 1px solid var(--line); background: var(--card); color: var(--text);
+  border-radius: 999px; padding: 4px 12px; font-size: 14px; cursor: pointer;
+}
+.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.bar { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 13px; color: var(--muted); }
+.bar select { font-size: 13px; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+ul { list-style: none; margin: 0; padding: 0; }
+li {
+  display: grid; grid-template-columns: 76px 1fr auto; gap: 10px; align-items: center;
+  padding: 10px 4px; border-bottom: 1px solid var(--line);
+}
+.code {
+  font: 600 18px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--code);
+  background: var(--accent-soft); border: 0; border-radius: 8px; padding: 8px 0; cursor: pointer; width: 100%;
+}
+.name { font-size: 17px; font-weight: 600; word-break: break-all; }
+.meta { font-size: 13px; color: var(--muted); }
+.meta a { color: var(--accent); text-decoration: none; }
+.tag { font-size: 12px; color: var(--muted); text-align: right; white-space: nowrap; }
+.more { display: block; width: 100%; margin: 16px 0; padding: 12px; font-size: 15px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; }
+.empty { text-align: center; color: var(--muted); padding: 40px 0; }
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--bg);
+  padding: 8px 16px; border-radius: 999px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none;
+}
+.toast.show { opacity: 1; }
+@media (max-width: 480px) { .inputs { grid-template-columns: 1fr; } li { grid-template-columns: 64px 1fr; } .tag { grid-column: 2; text-align: left; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>金嗓找歌</h1>
+    <p id="status">載入歌單中…</p>
+  </header>
+  <div class="search">
+    <div class="inputs">
+      <input id="singer" type="search" placeholder="歌手名稱" autocomplete="off">
+      <input id="name" type="search" placeholder="歌曲名稱" autocomplete="off">
+    </div>
+    <div class="chips" id="langs"></div>
+    <div class="bar">
+      <span id="count"></span>
+      <label>排序
+        <select id="sort">
+          <option value="hot">點播數</option>
+          <option value="new">上架日期</option>
+          <option value="code">歌號</option>
+        </select>
+      </label>
+    </div>
+  </div>
+  <ul id="list"></ul>
+  <button class="more" id="more" hidden>顯示更多</button>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const LANGS = [["", "全部"], ["台", "台語"], ["國", "國語"], ["日", "日文"], ["客", "客家"], ["粵", "粵語"], ["英", "英文"], ["山", "山地"], ["兒", "兒歌"]];
+const PAGE = 100;
+const $ = id => document.getElementById(id);
+let songs = [], hits = [], shown = 0, lang = "";
+
+// 全形轉半形、去空白、轉小寫，讓「ａｂｃ」「A B C」都能比對到
+const norm = s => String(s).replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+  .replace(/\s+/g, "").toLowerCase();
+
+LANGS.forEach(([v, label]) => {
+  const b = document.createElement("button");
+  b.className = "chip" + (v === "" ? " on" : "");
+  b.textContent = label;
+  b.onclick = () => { lang = v; document.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b)); search(); };
+  $("langs").appendChild(b);
+});
+
+function search() {
+  const qs = norm($("singer").value), qn = norm($("name").value);
+  hits = songs.filter(s => (!lang || s.lang === lang) && (!qs || s.ns.includes(qs)) && (!qn || s.nn.includes(qn)));
+  const sort = $("sort").value;
+  if (sort === "hot") hits.sort((a, b) => b.counter - a.counter);
+  else if (sort === "new") hits.sort((a, b) => b.songDate.localeCompare(a.songDate) || b.counter - a.counter);
+  else hits.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+  $("count").textContent = `找到 ${hits.length.toLocaleString()} 首`;
+  $("list").innerHTML = "";
+  shown = 0;
+  render();
+  const params = new URLSearchParams();
+  if ($("singer").value) params.set("singer", $("singer").value);
+  if ($("name").value) params.set("name", $("name").value);
+  if (lang) params.set("lang", lang);
+  history.replaceState(null, "", params.toString() ? "?" + params : location.pathname);
+}
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function render() {
+  const frag = document.createDocumentFragment();
+  hits.slice(shown, shown + PAGE).forEach(s => {
+    const li = document.createElement("li");
+    const yt = s.youtubeID ? ` · <a href="https://www.youtube.com/watch?v=${esc(s.youtubeID)}" target="_blank" rel="noopener">YouTube</a>` : "";
+    const date = s.songDate && s.songDate !== "000-00" ? ` · ${esc(s.songDate)}` : "";
+    li.innerHTML = `<button class="code" title="點一下複製歌號">${esc(s.code)}</button>
+      <div><div class="name">${esc(s.name)}</div><div class="meta">${esc(s.singer)}${yt}</div></div>
+      <div class="tag">${esc(s.lang)}${s.sex ? " · " + esc(s.sex) : ""}${date}<br>點播 ${Number(s.counter).toLocaleString()}</div>`;
+    li.querySelector(".code").onclick = () => copy(s.code);
+    frag.appendChild(li);
+  });
+  $("list").appendChild(frag);
+  shown = Math.min(shown + PAGE, hits.length);
+  $("more").hidden = shown >= hits.length;
+  if (!hits.length) $("list").innerHTML = '<li class="empty" style="display:block">找不到符合的歌</li>';
+}
+
+function copy(code) {
+  const done = () => { $("toast").textContent = `已複製歌號 ${code}`; $("toast").classList.add("show"); setTimeout(() => $("toast").classList.remove("show"), 1200); };
+  if (navigator.clipboard) navigator.clipboard.writeText(code).then(done, done); else done();
+}
+
+let timer;
+["singer", "name"].forEach(id => $(id).addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(search, 150); }));
+$("sort").onchange = search;
+$("more").onclick = render;
+
+fetch("data/songs.json", { cache: "no-cache" }).then(r => r.json()).then(data => {
+  const f = data.fields;
+  songs = data.songs.map(row => {
+    const s = {};
+    f.forEach((k, i) => s[k] = row[i]);
+    s.ns = norm(s.singer); s.nn = norm(s.name);
+    return s;
+  });
+  $("status").textContent = `共 ${songs.length.toLocaleString()} 首 · 更新於 ${data.updated}（台灣時間）`;
+  const p = new URLSearchParams(location.search);
+  $("singer").value = p.get("singer") || "";
+  $("name").value = p.get("name") || "";
+  if (p.get("lang")) {
+    const i = LANGS.findIndex(([v]) => v === p.get("lang"));
+    if (i > 0) document.querySelectorAll(".chip")[i].click();
+  }
+  search();
+}).catch(() => { $("status").textContent = "歌單載入失敗，請重新整理"; });
+</script>
+</body>
+</html>

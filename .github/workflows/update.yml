@@ -1,0 +1,36 @@
+name: 每日更新歌單
+
+on:
+  schedule:
+    - cron: "0 22 * * *"   # 台灣時間每天 06:00
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-songs
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 抓取歌單
+        run: python3 scripts/crawl.py
+      - name: 有變動才提交
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data/songs.json data/songs.csv
+          if git diff --cached --quiet; then
+            echo "歌單沒有變動"
+          else
+            git commit -m "chore(data): 更新歌單 $(TZ=Asia/Taipei date +%F)"
+            git push origin HEAD:main
+          fi
